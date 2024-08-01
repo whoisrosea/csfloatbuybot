@@ -23,21 +23,20 @@ const stickersNames = [
 let knownListingsIds = new Set();
 
 const { Builder, By, until } = require("selenium-webdriver");
-const firefox = require("selenium-webdriver/firefox");
+const chrome = require("selenium-webdriver/chrome");
 const path = require("path");
 
 async function fetchBuffPrice(id) {
-  const profilePath = path.join(
-    "/Users/whoisrosea/Library/Application Support/Firefox/Profiles/78yboywm.default-release"
-  );
+  const extensionPath = path.resolve("./extensions/betterFloat.crx");
+  let options = new chrome.Options();
+  options.addExtensions(extensionPath);
 
-  let options = new firefox.Options();
-  options.setProfile(profilePath);
   options.addArguments("--headless");
+  options.addArguments("--disable-gpu");
 
   let driver = await new Builder()
-    .forBrowser("firefox")
-    .setFirefoxOptions(options)
+    .forBrowser("chrome")
+    .setChromeOptions(options)
     .build();
 
   try {
@@ -99,15 +98,11 @@ async function filterListings(listings) {
   const filteredListings = [];
 
   for (const listing of listings) {
-    console.log("////////////////////////");
     let isCandidateValid = false;
     const stickers = listing.item.stickers;
     const price = listing.price;
     const float = parseFloat(listing.item.float_value);
     const name = listing.item.item_name;
-    console.log("candidate", name);
-    console.log("candidate price", price);
-    console.log("candidate float", float);
     if (
       float < 0.01 &&
       price > 200 &&
@@ -120,20 +115,13 @@ async function filterListings(listings) {
         const numericBuffPrice =
           price + parseFloat(buffPrice.replace(/[\+\-$]/g, ""));
         const percentage = 100 - (price / numericBuffPrice) * 100;
-        console.log("candidate buffPrice", buffPrice);
-        console.log("percent", percentage);
         if (percentage > 10 && sign === "-") {
-          console.log(
-            "//////////////////////////////////////////////// buy ////////////////////////////////////////////////",
-            listing.id
-          );
           filteredListings.push(listing);
           isCandidateValid = true;
         }
       } catch (error) {
         console.error(`Error fetching Buff price for ${name}:`, error);
       }
-      console.log("////////////////////////");
     }
     if (stickers && !isCandidateValid) {
       for (const sticker of stickers) {
@@ -144,8 +132,8 @@ async function filterListings(listings) {
             const numericBuffPrice =
               price + parseFloat(buffPrice.replace(/[\+\-$]/g, ""));
             const percentage = 100 - (price / numericBuffPrice) * 100;
-            console.log("candidate buffPrice", buffPrice);
-            console.log("percent", percentage);
+            // console.log("candidate buffPrice", buffPrice);
+            // console.log("percent", percentage);
             if (percentage >= 0 && sign === "-") {
               filteredListings.push(listing);
             }
@@ -190,8 +178,10 @@ async function fetchAndCompareListings() {
   const listings = await fetchSortedListings();
   const newListings = compareNewListings(listings);
   const filteredListings = await filterListings(newListings);
-  console.log("////////////////////////");
-  console.log("filteredListings.length =", filteredListings);
+  // console.log("////////////////////////");
+  if (filteredListings.length > 0) {
+    console.log("filteredListings.length =", filteredListings);
+  }
   // await buyFilteredListings(filteredListings);
 }
 
