@@ -6,23 +6,37 @@ const headers = {
   Authorization: API_KEY,
 };
 
+const stickersNames = [
+  "Sticker | Titan (Foil) | Cluj-Napoca 2015",
+  "Sticker | Titan (Foil) | Cologne 2015",
+  "Sticker | Titan (Holo) | Cologne 2014",
+  "Sticker | Titan (Holo) | Katowice 2015",
+  "Sticker | Titan | Cluj-Napoca 2015",
+  "Sticker | Titan | Cologne 2014",
+  "Sticker | Titan | Cologne 2015",
+  "Sticker | Titan | Katowice 2015",
+  "Sticker | iBUYPOWER (Holo) | Cologne 2014",
+  "Sticker | iBUYPOWER | Cologne 2014",
+  "Sticker | iBUYPOWER | DreamHack 2014",
+];
+
 let knownListingsIds = new Set();
 
 const { Builder, By, until } = require("selenium-webdriver");
-const firefox = require("selenium-webdriver/firefox");
+const chrome = require("selenium-webdriver/chrome");
 const path = require("path");
 
 async function fetchBuffPrice(id) {
-  const profilePath = path.join(
-    "/Users/whoisrosea/Library/Application Support/Firefox/Profiles/78yboywm.default-release"
-  );
+  const extensionPath = path.resolve("./extensions/betterFloat.crx");
+  let options = new chrome.Options();
+  options.addExtensions(extensionPath);
 
-  let options = new firefox.Options();
-  options.setProfile(profilePath);
+  options.addArguments("--headless");
+  options.addArguments("--disable-gpu");
 
   let driver = await new Builder()
-    .forBrowser("firefox")
-    .setFirefoxOptions(options)
+    .forBrowser("chrome")
+    .setChromeOptions(options)
     .build();
 
   try {
@@ -84,24 +98,47 @@ async function filterListings(listings) {
   const filteredListings = [];
 
   for (const listing of listings) {
+    let isCandidateValid = false;
+    const stickers = listing.item.stickers;
     const price = listing.price;
     const float = parseFloat(listing.item.float_value);
     const name = listing.item.item_name;
-
-    if (float < 0.01 && price > 200 && listing.type === "buy_now") {
+    if (
+      float < 0.01 &&
+      price > 200 &&
+      price < 10000 &&
+      listing.type === "buy_now"
+    ) {
       try {
         const buffPrice = await fetchBuffPrice(listing.id);
         const sign = buffPrice.charAt(0);
         const numericBuffPrice =
           price + parseFloat(buffPrice.replace(/[\+\-$]/g, ""));
         const percentage = 100 - (price / numericBuffPrice) * 100;
-
         if (percentage > 10 && sign === "-") {
-          console.log('filtered', listing.id);
           filteredListings.push(listing);
+          isCandidateValid = true;
         }
       } catch (error) {
         console.error(`Error fetching Buff price for ${name}:`, error);
+      }
+    }
+    if (stickers && !isCandidateValid) {
+      for (const sticker of stickers) {
+        for (const stickerName of stickersNames) {
+          if (stickerName === sticker.name && sticker.slot !== 4) {
+            const buffPrice = await fetchBuffPrice(listing.id);
+            const sign = buffPrice.charAt(0);
+            const numericBuffPrice =
+              price + parseFloat(buffPrice.replace(/[\+\-$]/g, ""));
+            const percentage = 100 - (price / numericBuffPrice) * 100;
+            // console.log("candidate buffPrice", buffPrice);
+            // console.log("percent", percentage);
+            if (percentage >= 0 && sign === "-") {
+              filteredListings.push(listing);
+            }
+          }
+        }
       }
     }
   }
@@ -109,11 +146,43 @@ async function filterListings(listings) {
   return filteredListings;
 }
 
+async function buyFilteredListings(listings) {
+  const buyUrl = "https://csfloat.com/api/v1/listings/buy";
+
+  for (const listing of listings) {
+    try {
+      const payload = {
+        total_price: listing.price,
+        contract_ids: [listing.id],
+      };
+
+      const config = {
+        headers: {
+          Authorization: "CXhSmYc1ttBFLXOGBTHnxOFNdU0WkRZy",
+        },
+      };
+
+      const response = await axios.post(buyUrl, payload, config);
+
+      console.log(
+        `Listing ${listing.id} processed successfully`,
+        response.data
+      );
+    } catch (error) {
+      console.error(`Error processing listing ${listing.id}`, error);
+    }
+  }
+}
+
 async function fetchAndCompareListings() {
   const listings = await fetchSortedListings();
   const newListings = compareNewListings(listings);
   const filteredListings = await filterListings(newListings);
-  console.log("filteredListings.length =", filteredListings.length);
+  // console.log("////////////////////////");
+  if (filteredListings.length > 0) {
+    console.log("filteredListings.length =", filteredListings);
+  }
+  // await buyFilteredListings(filteredListings);
 }
 
 function startFetchingListings() {
